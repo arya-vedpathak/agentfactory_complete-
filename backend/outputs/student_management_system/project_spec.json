@@ -1,0 +1,23 @@
+{
+  "project_name": "Student Management System",
+  "features": [
+    "registration",
+    "attendance",
+    "fee tracking",
+    "reports"
+  ],
+  "tasks": [
+    "Design the registration module",
+    "Design the attendance module",
+    "Design the fee tracking module",
+    "Design the reports module",
+    "Define the application data model",
+    "Add navigation and user flows",
+    "Run basic project validation"
+  ],
+  "architecture_notes": [
+    "Use a modular starter structure",
+    "Replace demo data with a persistent database before production"
+  ],
+  "generation_mode": "template-based MVP"
+}

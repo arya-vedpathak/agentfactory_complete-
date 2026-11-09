@@ -1,0 +1,12 @@
+﻿backend/.env
+**/.env
+**/.env.*
+!**/.env.example
+backend/venv/
+**/node_modules/
+backend/outputs/context_memory.db
+**/__pycache__/
+*.py[cod]
+frontend/dist/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,23 @@
+{
+  "project_name": "Complete Library Management System For School",
+  "features": [
+    "clearly organized source code",
+    "setup instructions",
+    "test results. Do not claim features are functional unless they are actually implemented",
+    "verified"
+  ],
+  "tasks": [
+    "Design the clearly organized source code module",
+    "Design the setup instructions module",
+    "Design the test results. do not claim features are functional unless they are actually implemented module",
+    "Design the verified module",
+    "Define the application data model",
+    "Add navigation and user flows",
+    "Run basic project validation"
+  ],
+  "architecture_notes": [
+    "Use a modular starter structure",
+    "Replace demo data with a persistent database before production"
+  ],
+  "generation_mode": "template-based MVP"
+}

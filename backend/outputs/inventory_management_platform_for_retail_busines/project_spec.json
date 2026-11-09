@@ -1,0 +1,21 @@
+{
+  "project_name": "Inventory Management Platform For Retail Business",
+  "features": [
+    "Core application module",
+    "Data management",
+    "Reports"
+  ],
+  "tasks": [
+    "Design the core application module module",
+    "Design the data management module",
+    "Design the reports module",
+    "Define the application data model",
+    "Add navigation and user flows",
+    "Run basic project validation"
+  ],
+  "architecture_notes": [
+    "Use a modular starter structure",
+    "Replace demo data with a persistent database before production"
+  ],
+  "generation_mode": "template-based MVP"
+}
