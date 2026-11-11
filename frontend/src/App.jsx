@@ -4,7 +4,7 @@ import {
   Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, Clock3, Code2,
   Command, Download, FileCode2, FolderKanban, Gauge, LayoutDashboard, LoaderCircle,
   Menu, MessageSquareText, BrainCircuit, Plus, Rocket, Search, Mic, ShieldCheck, Sparkles, Terminal,
-  WandSparkles, X, Zap
+  WandSparkles, X, Zap, Pencil, Trash2, Save, FileText
 } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -31,6 +31,17 @@ function App() {
 const [memoryLoading, setMemoryLoading] = useState(false)
 const [memoryError, setMemoryError] = useState('')
   const [memorySearch, setMemorySearch] = useState('')
+
+  const [editingProject, setEditingProject] = useState(null)
+  const [editorFiles, setEditorFiles] = useState([])
+  const [selectedFile, setSelectedFile] = useState('')
+  const [fileContent, setFileContent] = useState('')
+  const [editorMode, setEditorMode] = useState('choose')
+  const [aiInstruction, setAiInstruction] = useState('')
+  const [aiProposal, setAiProposal] = useState(null)
+  const [editBusy, setEditBusy] = useState(false)
+  const [editError, setEditError] = useState('')
+  const [editSaved, setEditSaved] = useState(false)
 
   const [activeView, setActiveView] = useState('overview')
 
@@ -104,6 +115,166 @@ const [memoryError, setMemoryError] = useState('')
   }
   function downloadZip() {
     if (result?.build?.project_id) window.open(`${API}/api/download/${encodeURIComponent(result.build.project_id)}`, '_blank', 'noopener,noreferrer')
+  }
+
+
+  async function openProjectEditor(memory) {
+    if (!memory?.id || !memory?.outcome?.build?.project_id) {
+      window.alert('This history record has no editable generated project.')
+      return
+    }
+
+    setEditingProject(memory)
+    setEditorFiles([])
+    setSelectedFile('')
+    setFileContent('')
+    setEditorMode('choose')
+    setAiInstruction('')
+    setAiProposal(null)
+    setEditError('')
+    setEditSaved(false)
+    setEditBusy(true)
+
+    try {
+      const response = await fetch(`${API}/api/projects/${encodeURIComponent(memory.id)}/files`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not load project files.')
+
+      setEditorFiles(data.files || [])
+      if (data.files?.length) {
+        setSelectedFile(data.files[0].path)
+        setFileContent(data.files[0].content)
+      }
+    } catch (e) {
+      setEditError(e.message || 'Could not load project files.')
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  function chooseEditorFile(path) {
+    const file = editorFiles.find(item => item.path === path)
+    if (!file) return
+    setSelectedFile(file.path)
+    setFileContent(file.content)
+    setEditSaved(false)
+    setEditError('')
+  }
+
+  async function saveEditorFile() {
+    if (!editingProject || !selectedFile || editBusy) return
+    setEditBusy(true)
+    setEditError('')
+    setEditSaved(false)
+
+    try {
+      const response = await fetch(`${API}/api/projects/${encodeURIComponent(editingProject.id)}/file`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: selectedFile, content: fileContent })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not save this file.')
+
+      setEditorFiles(files => files.map(file =>
+        file.path === selectedFile ? { ...file, content: fileContent } : file
+      ))
+      setEditSaved(true)
+    } catch (e) {
+      setEditError(e.message || 'Could not save this file.')
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  async function requestAIEdit() {
+    if (!editingProject || aiInstruction.trim().length < 5 || editBusy) return
+    setEditBusy(true)
+    setEditError('')
+    setEditSaved(false)
+    setAiProposal(null)
+
+    try {
+      const response = await fetch(`${API}/api/projects/${encodeURIComponent(editingProject.id)}/ai-edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instruction: aiInstruction.trim() })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'AI could not prepare an edit.')
+
+      setAiProposal(data)
+      if (!data.changes?.length) {
+        setEditError(data.summary || 'AI did not propose any file changes.')
+      }
+    } catch (e) {
+      setEditError(e.message || 'AI editing failed. Check the backend and Groq configuration.')
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  async function applyAIEdit() {
+    if (!editingProject || !aiProposal?.changes?.length || editBusy) return
+    if (!window.confirm('Apply the reviewed AI changes to this project? Original files will be backed up.')) return
+
+    setEditBusy(true)
+    setEditError('')
+    setEditSaved(false)
+
+    try {
+      const response = await fetch(`${API}/api/projects/${encodeURIComponent(editingProject.id)}/apply-ai-edits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ changes: aiProposal.changes })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not apply AI changes.')
+
+      const filesResponse = await fetch(`${API}/api/projects/${encodeURIComponent(editingProject.id)}/files`)
+      const filesData = await filesResponse.json()
+      if (!filesResponse.ok) throw new Error(filesData.detail || 'Changes were applied, but the file list could not refresh.')
+
+      setEditorFiles(filesData.files || [])
+      const refreshed = (filesData.files || []).find(file => file.path === selectedFile)
+      if (refreshed) setFileContent(refreshed.content)
+      setAiProposal(null)
+      setEditSaved(true)
+      await refreshMemories()
+    } catch (e) {
+      setEditError(e.message || 'Could not apply AI changes.')
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  async function deleteProjectHistory(memory) {
+    if (!memory?.id) return
+    const confirmed = window.confirm(
+      `Delete "${memory.project_name || 'Untitled Project'}" from project history? The generated project files will not be deleted.`
+    )
+    if (!confirmed) return
+
+    try {
+      const response = await fetch(`${API}/api/memory/${encodeURIComponent(memory.id)}`, {
+        method: 'DELETE'
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'Could not delete this history record.')
+
+      if (editingProject?.id === memory.id) setEditingProject(null)
+      await refreshMemories()
+    } catch (e) {
+      window.alert(e.message || 'Could not delete this history record.')
+    }
+  }
+
+  function finishProjectEditing() {
+    if (editingProject) selectMemory(editingProject)
+    setEditingProject(null)
+    setAiProposal(null)
+    setEditError('')
+    setEditSaved(false)
   }
 
   const completed = useMemo(() => new Set((result?.events || []).filter(e => ['completed', 'success', 'passed'].includes(e.status)).map(e => e.stage)), [result])
@@ -296,21 +467,67 @@ const [memoryError, setMemoryError] = useState('')
           {memoryError && <div className="error-banner"><X size={16}/><span>{memoryError}</span></div>}
 
           {!memoryLoading && !memoryError && memories
-            .filter((memory, index, arr) => arr.findIndex(item => item.project_name === memory.project_name) === index)
             .filter((memory, index) => memorySearch.trim()
               ? (memory.project_name || '').toLowerCase().startsWith(memorySearch.trim().toLowerCase())
               : index < 5
             )
-            .map((memory, index) => (
-              <button type="button" key={memory.id || index} onClick={() => selectMemory(memory)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 4px', border: 0, borderBottom: '1px solid #eff0f4', background: 'transparent', width: '100%', textAlign: 'left', cursor: 'pointer', color: '#34394e', fontSize: 13 }}>
-                <span style={{ color: '#a3a6b5', font: '10px DM Mono, monospace', width: 22 }}>{String(index + 1).padStart(2, '0')}</span>
-                <FolderKanban size={16} style={{ color: '#8276df', flexShrink: 0 }}/>
-                <span style={{ fontWeight: 600 }}>{memory.project_name || 'Untitled Project'}</span>
-              </button>
-            ))}
+            .map((memory, index) => {
+              const hasProject = Boolean(memory.outcome?.build?.project_id)
+              return (
+                <div className="history-row" key={memory.id || index}>
+                  <button
+                    type="button"
+                    className="history-row-main"
+                    onClick={() => selectMemory(memory)}
+                    title="Open saved project"
+                  >
+                    <span className="history-row-number">{String(index + 1).padStart(2, '0')}</span>
+                    <FolderKanban size={16} />
+                    <span className="history-row-name">{memory.project_name || 'Untitled Project'}</span>
+                  </button>
+
+                  <div className="history-actions">
+                    <button
+                      type="button"
+                      className="history-action"
+                      title={hasProject ? 'Download project ZIP' : 'No generated project available'}
+                      aria-label="Download project ZIP"
+                      disabled={!hasProject}
+                      onClick={() => window.open(
+                        `${API}/api/download/${encodeURIComponent(memory.outcome.build.project_id)}`,
+                        '_blank',
+                        'noopener,noreferrer'
+                      )}
+                    >
+                      <Download size={15} />
+                    </button>
+
+                    <button
+                      type="button"
+                      className="history-action"
+                      title={hasProject ? 'Edit project' : 'No generated project available'}
+                      aria-label="Edit project"
+                      disabled={!hasProject}
+                      onClick={() => openProjectEditor(memory)}
+                    >
+                      <Pencil size={15} />
+                    </button>
+
+                    <button
+                      type="button"
+                      className="history-action history-action-delete"
+                      title="Delete history record"
+                      aria-label="Delete history record"
+                      onClick={() => deleteProjectHistory(memory)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
 
           {!memoryLoading && !memoryError && memories
-            .filter((memory, index, arr) => arr.findIndex(item => item.project_name === memory.project_name) === index)
             .filter(memory => memorySearch.trim() && (memory.project_name || '').toLowerCase().startsWith(memorySearch.trim().toLowerCase()))
             .length === 0 && memorySearch.trim() && (
               <p style={{ padding: '16px 4px', color: '#9296a8', fontSize: 13 }}>
@@ -357,6 +574,161 @@ const [memoryError, setMemoryError] = useState('')
             </div>
           </div>}
         </section>
+
+        {editingProject && (
+          <div
+            className="editor-overlay"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !editBusy) setEditingProject(null)
+            }}
+          >
+            <section className="editor-modal" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+              <header className="editor-header">
+                <div>
+                  <span className="mini-label">PROJECT EDITOR</span>
+                  <h2 id="editor-title">{editingProject.project_name || 'Saved project'}</h2>
+                  <p>Make changes to this generated project. Your original files are backed up when saved.</p>
+                </div>
+                <button
+                  type="button"
+                  className="history-action"
+                  aria-label="Close editor"
+                  title="Close editor"
+                  disabled={editBusy}
+                  onClick={() => setEditingProject(null)}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+
+              <div className="editor-body">
+                {editError && <div className="error-banner"><X size={16}/><span>{editError}</span></div>}
+                {editSaved && <div className="editor-status"><CheckCircle2 size={16}/> Changes saved successfully.</div>}
+
+                {editBusy && editorFiles.length === 0 && (
+                  <div className="editor-loading"><LoaderCircle className="spin" size={20}/> Loading project files...</div>
+                )}
+
+                {editorMode === 'choose' && (
+                  <div className="editor-choice-wrap">
+                    <p className="editor-intro">Choose how you want to edit this project.</p>
+                    <div className="editor-choice-grid">
+                      <button type="button" className="editor-choice" disabled={editBusy} onClick={() => { setEditorMode('manual'); setEditError(''); setEditSaved(false) }}>
+                        <span className="editor-choice-icon"><Code2 size={22}/></span>
+                        <b>Edit code yourself</b>
+                        <small>Open project files, make your own code changes and save them.</small>
+                        <span className="editor-choice-link">Open code editor <ArrowRight size={14}/></span>
+                      </button>
+                      <button type="button" className="editor-choice" disabled={editBusy} onClick={() => { setEditorMode('ai'); setEditError(''); setEditSaved(false) }}>
+                        <span className="editor-choice-icon"><WandSparkles size={22}/></span>
+                        <b>AI code editing</b>
+                        <small>Describe the change. AI prepares a proposal for your review before applying it.</small>
+                        <span className="editor-choice-link">Use AI editing <ArrowRight size={14}/></span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {editorMode === 'manual' && (
+                  <div className="editor-workspace">
+                    <aside className="editor-file-panel">
+                      <span className="mini-label">PROJECT FILES ({editorFiles.length})</span>
+                      {editorFiles.map(file => (
+                        <button
+                          type="button"
+                          key={file.path}
+                          className={`editor-file-button ${selectedFile === file.path ? 'is-active' : ''}`}
+                          onClick={() => chooseEditorFile(file.path)}
+                          disabled={editBusy}
+                        >
+                          <FileText size={14}/><span>{file.path}</span>
+                        </button>
+                      ))}
+                    </aside>
+                    <div className="editor-code-panel">
+                      <div className="editor-file-toolbar">
+                        <b>{selectedFile || 'Select a file'}</b>
+                        <span>Plain text editor</span>
+                      </div>
+                      <textarea
+                        className="editor-code-area"
+                        value={fileContent}
+                        onChange={(event) => { setFileContent(event.target.value); setEditSaved(false) }}
+                        spellCheck={false}
+                        placeholder="Select a project file to edit..."
+                        disabled={!selectedFile || editBusy}
+                      />
+                      <div className="editor-action-line">
+                        <span>Save creates a backup of the previous file.</span>
+                        <div className="editor-save-controls">
+                          {editSaved && (
+                            <span className="editor-save-confirmation">
+                              <CheckCircle2 size={15}/> File saved successfully!
+                            </span>
+                          )}
+                          <button type="button" className="download-cta" onClick={saveEditorFile} disabled={!selectedFile || editBusy}>
+                            {editBusy ? <LoaderCircle className="spin" size={15}/> : <Save size={15}/>}
+                            Save file
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {editorMode === 'ai' && (
+                  <div className="editor-ai-form">
+                    <label htmlFor="ai-edit-instruction">DESCRIBE THE CODE CHANGES</label>
+                    <textarea
+                      id="ai-edit-instruction"
+                      value={aiInstruction}
+                      onChange={(event) => setAiInstruction(event.target.value)}
+                      placeholder="Example: Add input validation to the student registration form and show clear error messages."
+                      rows={5}
+                      disabled={editBusy}
+                    />
+                    <div className="editor-action-line">
+                      <span>AI will prepare a proposal. No files change until you approve it.</span>
+                      <button type="button" className="download-cta" onClick={requestAIEdit} disabled={editBusy || aiInstruction.trim().length < 5}>
+                        {editBusy ? <LoaderCircle className="spin" size={15}/> : <WandSparkles size={15}/>}
+                        Generate proposal
+                      </button>
+                    </div>
+
+                    {aiProposal && (
+                      <div className="editor-proposal">
+                        <div className="editor-proposal-heading">
+                          <div><span className="mini-label">AI PROPOSAL</span><h3>Review before applying</h3></div>
+                          <span>{aiProposal.changes?.length || 0} file(s)</span>
+                        </div>
+                        <p>{aiProposal.summary}</p>
+                        {(aiProposal.changes || []).map((change, index) => (
+                          <details className="editor-proposal-file" key={`${change.path}-${index}`} open={index === 0}>
+                            <summary><FileCode2 size={14}/>{change.path}</summary>
+                            <pre>{change.content}</pre>
+                          </details>
+                        ))}
+                        <button type="button" className="download-cta" onClick={applyAIEdit} disabled={editBusy || !aiProposal.changes?.length}>
+                          {editBusy ? <LoaderCircle className="spin" size={15}/> : <Check size={15}/>}
+                          Apply reviewed changes
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <footer className="editor-modal-footer">
+                <button type="button" className="outline-button" onClick={() => { setEditorMode('choose'); setEditError(''); setAiProposal(null) }} disabled={editBusy}>
+                  {editorMode === 'choose' ? 'Close' : 'Back to choices'}
+                </button>
+                <button type="button" className="download-cta" onClick={finishProjectEditing} disabled={editBusy}>
+                  Edit Final <ArrowRight size={15}/>
+                </button>
+              </footer>
+            </section>
+          </div>
+        )}
 
         <footer className="page-footer"><span><b>AGENT FACTORY OS</b> Â· AI SOFTWARE FACTORY</span><span>Built to move business outcomes forward <span className="footer-star">âœ³</span></span><span>LOCAL MVP Â· V1.0</span></footer>
       </div>

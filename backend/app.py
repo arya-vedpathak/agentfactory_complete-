@@ -11,6 +11,10 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 
 from orchestrator.workflow import run_factory
 from integration.output_manager import get_project_zip
+from integration.project_editor import (
+    list_project_files, save_project_file, propose_ai_changes,
+    apply_ai_changes, delete_history_record,
+)
 
 app = FastAPI(title="Agent Factory OS API", version="1.0.0")
 
@@ -32,6 +36,16 @@ app.add_middleware(
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=8, max_length=4000)
+
+class SaveFileRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    content: str
+
+class AIEditRequest(BaseModel):
+    instruction: str = Field(min_length=5, max_length=4000)
+
+class ApplyEditsRequest(BaseModel):
+    changes: list[dict] = Field(min_length=1, max_length=20)
 
 @app.get("/api/health")
 def health():
@@ -83,4 +97,53 @@ def get_memory():
         memories.append(item)
 
     return {"memories": memories}
+
+@app.get("/api/projects/{history_id}/files")
+def get_project_files(history_id: str):
+    try:
+        return list_project_files(history_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/api/projects/{history_id}/file")
+def update_project_file(history_id: str, request: SaveFileRequest):
+    try:
+        return save_project_file(history_id, request.path, request.content)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/projects/{history_id}/ai-edit")
+def create_ai_edit(history_id: str, request: AIEditRequest):
+    try:
+        return propose_ai_changes(history_id, request.instruction)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/projects/{history_id}/apply-ai-edits")
+def apply_project_ai_edits(history_id: str, request: ApplyEditsRequest):
+    try:
+        return apply_ai_changes(history_id, request.changes)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/memory/{history_id}")
+def delete_project_history(history_id: str):
+    try:
+        return delete_history_record(history_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 

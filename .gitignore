@@ -1,12 +1,39 @@
-﻿backend/.env
-**/.env
-**/.env.*
-!**/.env.example
-backend/venv/
-**/node_modules/
-backend/outputs/context_memory.db
-**/__pycache__/
+﻿# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Python
+venv/
+.venv/
+__pycache__/
 *.py[cod]
-frontend/dist/
+.pytest_cache/
+.mypy_cache/
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+_edit_backups/
+
+# Generated runtime outputs
+backend/outputs/
+!backend/outputs/.gitkeep
+
+# Node dependencies and builds
+node_modules/
+dist/
+build/
+
+# IDE and operating system
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
+
+# Local project backups
+project_studio_backup/
+project_studio_backup_*/
